@@ -290,8 +290,29 @@ async def locations(
         body = await tri_get("/stations", params={"include": "connectors"})
         stations = station_list(body)
         locations = [await build_location(s) for s in stations]
+
+        # OCPI date_from/date_to filtering based on Location last_updated.
+        if date_from:
+            df = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
+            locations = [
+                loc for loc in locations
+                if datetime.fromisoformat(
+                    loc["last_updated"].replace("Z", "+00:00")
+                ) >= df
+            ]
+
+        if date_to:
+            dt = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
+            locations = [
+                loc for loc in locations
+                if datetime.fromisoformat(
+                    loc["last_updated"].replace("Z", "+00:00")
+                ) < dt
+            ]
+
         # Small deployment: support offset/limit even if Google is configured as Pagination=None.
         page = locations[offset:offset + limit]
+        
         return JSONResponse(content=ocpi_response(page), headers={
             "X-Total-Count": str(len(locations)),
             "X-Limit": str(limit),
