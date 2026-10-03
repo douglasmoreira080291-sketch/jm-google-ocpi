@@ -279,7 +279,7 @@ async def version_details(authorization: Optional[str] = Header(None)):
 
 @app.get("/ocpi/cpo/2.2.1/locations")
 async def locations(
-    authorization: Optional[str] = Header(None),
+    authorization: Optional[str] = Security(authorization_header),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
     offset: int = Query(0, ge=0),
