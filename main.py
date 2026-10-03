@@ -190,6 +190,8 @@ async def build_location(station: dict) -> dict:
                 "standard": connector_standard(dig(c, "connector_type", default=conn_type)),
                 "format": "CABLE",
                 "power_type": "DC",
+                "max_voltage": 1000,
+                "max_amperage": 130,
                 "max_electric_power": int(power_kw * 1000) if power_kw else None,
                 "last_updated": last,
             }],
