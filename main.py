@@ -10,7 +10,11 @@ from fastapi.security import APIKeyHeader
 from fastapi.responses import JSONResponse
 
 app = FastAPI(title="JM Google OCPI Bridge", version="0.1.0")
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+authorization_header = APIKeyHeader(
+    name="Authorization",
+    scheme_name="OCPI_TOKEN_C",
+    auto_error=False
+)
 
 TRICHARGE_BASE_URL = os.getenv("TRICHARGE_BASE_URL", "https://pay.tricharge.com.br/api/partner/v1").rstrip("/")
 TRICHARGE_CLIENT_ID = os.getenv("TRICHARGE_CLIENT_ID", "")
