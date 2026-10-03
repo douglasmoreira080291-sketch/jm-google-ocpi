@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query, Security
+from fastapi import FastAPI, Header, HTTPException, Query, Security
 from fastapi.security import APIKeyHeader
 from fastapi.responses import JSONResponse
 
