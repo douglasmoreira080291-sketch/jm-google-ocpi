@@ -5,11 +5,16 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 import httpx
-from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Security
+from fastapi.security import APIKeyHeader
 from fastapi.responses import JSONResponse
 
 app = FastAPI(title="JM Google OCPI Bridge", version="0.1.0")
-
+authorization_header = APIKeyHeader(
+    name="Authorization",
+    scheme_name="OCPI_TOKEN_C",
+    auto_error=False
+)
 TRICHARGE_BASE_URL = os.getenv("TRICHARGE_BASE_URL", "https://pay.tricharge.com.br/api/partner/v1").rstrip("/")
 TRICHARGE_CLIENT_ID = os.getenv("TRICHARGE_CLIENT_ID", "")
 TRICHARGE_CLIENT_SECRET = os.getenv("TRICHARGE_CLIENT_SECRET", "")
@@ -236,7 +241,7 @@ async def health():
         "google_ocpi_token_length": len(GOOGLE_OCPI_TOKEN)
     }
 @app.get("/auth-test")
-async def auth_test(authorization: Optional[str] = Header(None)):
+async def auth_test(authorization: Optional[str] = Security(authorization_header)):
     if not authorization:
         return {
             "authorization_received": False
