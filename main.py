@@ -235,6 +235,30 @@ async def health():
         "google_ocpi_token_loaded": bool(GOOGLE_OCPI_TOKEN),
         "google_ocpi_token_length": len(GOOGLE_OCPI_TOKEN)
     }
+@app.get("/auth-test")
+async def auth_test(authorization: Optional[str] = Header(None)):
+    if not authorization:
+        return {
+            "authorization_received": False
+        }
+
+    if authorization.startswith("Token "):
+        supplied = authorization[6:].strip()
+        scheme = "Token"
+    elif authorization.startswith("Bearer "):
+        supplied = authorization[7:].strip()
+        scheme = "Bearer"
+    else:
+        supplied = authorization.strip()
+        scheme = "Other"
+
+    return {
+        "authorization_received": True,
+        "scheme": scheme,
+        "supplied_length": len(supplied),
+        "expected_length": len(GOOGLE_OCPI_TOKEN),
+        "matches": supplied == GOOGLE_OCPI_TOKEN
+    }
 
 @app.get("/ocpi/versions")
 async def versions(authorization: Optional[str] = Header(None)):
