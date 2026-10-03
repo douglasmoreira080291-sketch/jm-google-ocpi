@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: jm-google-ocpi
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: TRICHARGE_BASE_URL
+        value: https://pay.tricharge.com.br/api/partner/v1
+      - key: TRICHARGE_CLIENT_ID
+        sync: false
+      - key: TRICHARGE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_OCPI_TOKEN
+        generateValue: true
+      - key: OCPI_COUNTRY_CODE
+        value: BR
+      - key: OCPI_PARTY_ID
+        value: JMC
+      - key: OCPI_OPERATOR_NAME
+        value: JM Carregadores
+      - key: PUBLIC_BASE_URL
+        sync: false
