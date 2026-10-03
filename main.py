@@ -263,13 +263,13 @@ async def auth_test(authorization: Optional[str] = Security(authorization_header
     }
 
 @app.get("/ocpi/versions")
-async def versions(authorization: Optional[str] = Header(None)):
+async def versions(authorization: Optional[str] = Security(authorization_header)):
     authorize(authorization)
     base = PUBLIC_BASE_URL or ""
     return ocpi_response([{"version": "2.2.1", "url": f"{base}/ocpi/cpo/2.2.1"}])
 
 @app.get("/ocpi/cpo/2.2.1")
-async def version_details(authorization: Optional[str] = Header(None)):
+async def version_details(authorization: Optional[str] = Security(authorization_header)):
     authorize(authorization)
     base = PUBLIC_BASE_URL or ""
     return ocpi_response({
@@ -323,7 +323,7 @@ async def locations(
         raise HTTPException(502, detail=f"Bridge error: {e}")
 
 @app.get("/ocpi/cpo/2.2.1/locations/{location_id}")
-async def location(location_id: str, authorization: Optional[str] = Header(None)):
+async def location(location_id: str, authorization: Optional[str] = Security(authorization_header)):
     authorize(authorization)
     try:
         body = await tri_get(f"/stations/{location_id}", params={"include": "connectors"})
