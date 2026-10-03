@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 import httpx
-from fastapi import FastAPI, Header, HTTPException, Query, Security
+from fastapi import FastAPI, Header, HTTPException, Query, Security, Response
 from fastapi.security import APIKeyHeader
 from fastapi.responses import JSONResponse
 
@@ -63,6 +63,12 @@ def authorize(authorization: Optional[str]):
     require_config()
     if not token_matches(authorization):
         raise HTTPException(401, detail="Unauthorized")
+
+def set_ocpi_headers(response: Response, x_request_id: Optional[str], x_correlation_id: Optional[str]):
+    if x_request_id:
+        response.headers["X-Request-ID"] = x_request_id
+    if x_correlation_id:
+        response.headers["X-Correlation-ID"] = x_correlation_id
 
 async def tricharge_token() -> str:
     if _token_cache["token"] and time.time() < _token_cache["expires_at"] - 30:
@@ -263,76 +269,78 @@ async def auth_test(authorization: Optional[str] = Security(authorization_header
     }
 
 @app.get("/ocpi/versions")
-async def versions(authorization: Optional[str] = Security(authorization_header)):
+async def versions(response: Response, authorization: Optional[str] = Security(authorization_header), x_request_id: Optional[str] = Header(None, alias="X-Request-ID"), x_correlation_id: Optional[str] = Header(None, alias="X-Correlation-ID")):
     authorize(authorization)
+    set_ocpi_headers(response, x_request_id, x_correlation_id)
     base = PUBLIC_BASE_URL or ""
     return ocpi_response([{"version": "2.2.1", "url": f"{base}/ocpi/cpo/2.2.1"}])
 
 @app.get("/ocpi/cpo/2.2.1")
-async def version_details(authorization: Optional[str] = Security(authorization_header)):
+async def version_details(response: Response, authorization: Optional[str] = Security(authorization_header), x_request_id: Optional[str] = Header(None, alias="X-Request-ID"), x_correlation_id: Optional[str] = Header(None, alias="X-Correlation-ID")):
     authorize(authorization)
+    set_ocpi_headers(response, x_request_id, x_correlation_id)
     base = PUBLIC_BASE_URL or ""
-    return ocpi_response({
-        "version": "2.2.1",
-        "endpoints": [{"identifier": "locations", "role": "SENDER", "url": f"{base}/ocpi/cpo/2.2.1/locations"}],
-    })
+    return ocpi_response({"version": "2.2.1", "endpoints": [{"identifier": "locations", "role": "SENDER", "url": f"{base}/ocpi/cpo/2.2.1/locations"}]})
 
 @app.get("/ocpi/cpo/2.2.1/locations")
-async def locations(
-    authorization: Optional[str] = Security(authorization_header),
-    date_from: Optional[str] = Query(None),
-    date_to: Optional[str] = Query(None),
-    offset: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
-):
+async def locations(response: Response, authorization: Optional[str] = Security(authorization_header), x_request_id: Optional[str] = Header(None, alias="X-Request-ID"), x_correlation_id: Optional[str] = Header(None, alias="X-Correlation-ID"), date_from: Optional[str] = Query(None), date_to: Optional[str] = Query(None), offset: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=1000)):
     authorize(authorization)
     try:
         body = await tri_get("/stations", params={"include": "connectors"})
-        stations = station_list(body)
-        locations = [await build_location(s) for s in stations]
-
-        # OCPI date_from/date_to filtering based on Location last_updated.
+        locations = [await build_location(s) for s in station_list(body)]
         if date_from:
             df = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
-            locations = [
-                loc for loc in locations
-                if datetime.fromisoformat(
-                    loc["last_updated"].replace("Z", "+00:00")
-                ) >= df
-            ]
-
+            locations = [loc for loc in locations if datetime.fromisoformat(loc["last_updated"].replace("Z", "+00:00")) >= df]
         if date_to:
             dt = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
-            locations = [
-                loc for loc in locations
-                if datetime.fromisoformat(
-                    loc["last_updated"].replace("Z", "+00:00")
-                ) < dt
-            ]
-
-        # Small deployment: support offset/limit even if Google is configured as Pagination=None.
-        page = locations[offset:offset + limit]
-        
-        return JSONResponse(content=ocpi_response(page), headers={
-            "X-Total-Count": str(len(locations)),
-            "X-Limit": str(limit),
-        })
+            locations = [loc for loc in locations if datetime.fromisoformat(loc["last_updated"].replace("Z", "+00:00")) < dt]
+        headers = {"X-Total-Count": str(len(locations)), "X-Limit": str(limit)}
+        if x_request_id: headers["X-Request-ID"] = x_request_id
+        if x_correlation_id: headers["X-Correlation-ID"] = x_correlation_id
+        return JSONResponse(content=ocpi_response(locations[offset:offset + limit]), headers=headers)
     except httpx.HTTPStatusError as e:
         raise HTTPException(502, detail=f"TriCharge API returned HTTP {e.response.status_code}")
     except Exception as e:
         raise HTTPException(502, detail=f"Bridge error: {e}")
 
+async def get_ocpi_location(location_id: str) -> dict:
+    body = await tri_get(f"/stations/{location_id}", params={"include": "connectors"})
+    stations = station_list(body)
+    station = stations[0] if stations else body.get("station", body) if isinstance(body, dict) else None
+    if not isinstance(station, dict):
+        raise HTTPException(404, detail="Location not found")
+    return await build_location(station)
+
 @app.get("/ocpi/cpo/2.2.1/locations/{location_id}")
-async def location(location_id: str, authorization: Optional[str] = Security(authorization_header)):
+async def location(location_id: str, response: Response, authorization: Optional[str] = Security(authorization_header), x_request_id: Optional[str] = Header(None, alias="X-Request-ID"), x_correlation_id: Optional[str] = Header(None, alias="X-Correlation-ID")):
     authorize(authorization)
+    set_ocpi_headers(response, x_request_id, x_correlation_id)
     try:
-        body = await tri_get(f"/stations/{location_id}", params={"include": "connectors"})
-        stations = station_list(body)
-        station = stations[0] if stations else body.get("station", body) if isinstance(body, dict) else None
-        if not isinstance(station, dict):
-            raise HTTPException(404, detail="Location not found")
-        return ocpi_response(await build_location(station))
+        return ocpi_response(await get_ocpi_location(location_id))
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(502, detail=f"Bridge error: {e}")
+
+@app.get("/ocpi/cpo/2.2.1/locations/{location_id}/{evse_uid}")
+async def evse(location_id: str, evse_uid: str, response: Response, authorization: Optional[str] = Security(authorization_header), x_request_id: Optional[str] = Header(None, alias="X-Request-ID"), x_correlation_id: Optional[str] = Header(None, alias="X-Correlation-ID")):
+    authorize(authorization)
+    set_ocpi_headers(response, x_request_id, x_correlation_id)
+    loc = await get_ocpi_location(location_id)
+    item = next((e for e in loc.get("evses", []) if e.get("uid") == evse_uid), None)
+    if item is None:
+        raise HTTPException(404, detail="EVSE not found")
+    return ocpi_response(item)
+
+@app.get("/ocpi/cpo/2.2.1/locations/{location_id}/{evse_uid}/{connector_id}")
+async def connector(location_id: str, evse_uid: str, connector_id: str, response: Response, authorization: Optional[str] = Security(authorization_header), x_request_id: Optional[str] = Header(None, alias="X-Request-ID"), x_correlation_id: Optional[str] = Header(None, alias="X-Correlation-ID")):
+    authorize(authorization)
+    set_ocpi_headers(response, x_request_id, x_correlation_id)
+    loc = await get_ocpi_location(location_id)
+    item = next((e for e in loc.get("evses", []) if e.get("uid") == evse_uid), None)
+    if item is None:
+        raise HTTPException(404, detail="EVSE not found")
+    conn = next((c for c in item.get("connectors", []) if c.get("id") == connector_id), None)
+    if conn is None:
+        raise HTTPException(404, detail="Connector not found")
+    return ocpi_response(conn)
