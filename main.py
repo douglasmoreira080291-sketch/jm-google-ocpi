@@ -228,7 +228,13 @@ async def root():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "configured": bool(TRICHARGE_CLIENT_ID and TRICHARGE_CLIENT_SECRET and GOOGLE_OCPI_TOKEN)}
+    return {
+        "status": "ok",
+        "tricharge_client_id_loaded": bool(TRICHARGE_CLIENT_ID),
+        "tricharge_client_secret_loaded": bool(TRICHARGE_CLIENT_SECRET),
+        "google_ocpi_token_loaded": bool(GOOGLE_OCPI_TOKEN),
+        "google_ocpi_token_length": len(GOOGLE_OCPI_TOKEN)
+    }
 
 @app.get("/ocpi/versions")
 async def versions(authorization: Optional[str] = Header(None)):
