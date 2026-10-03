@@ -46,24 +46,18 @@ def require_config():
     }.items() if not v]
     if missing:
         raise HTTPException(503, detail=f"Missing environment variables: {', '.join(missing)}")
-
 def token_matches(header: Optional[str]) -> bool:
     if not header or not GOOGLE_OCPI_TOKEN:
         return False
-    if header.startswith("Token "):
-        supplied = header[6:].strip()
-    elif header.startswith("Bearer "):
-        supplied = header[7:].strip()
-    else:
-        return False
-    # Accept raw TOKEN C (common OCPI 2.2 deployments) and RFC4648/base64 form.
-    if supplied == GOOGLE_OCPI_TOKEN:
-        return True
-    try:
-        decoded = base64.b64decode(supplied).decode("utf-8").strip()
-        return decoded == GOOGLE_OCPI_TOKEN
-    except Exception:
-        return False
+
+    supplied = header.strip()
+
+    if supplied.startswith("Token "):
+        supplied = supplied[6:].strip()
+    elif supplied.startswith("Bearer "):
+        supplied = supplied[7:].strip()
+
+    return supplied == GOOGLE_OCPI_TOKEN
 
 def authorize(authorization: Optional[str]):
     require_config()
