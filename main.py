@@ -230,6 +230,29 @@ async def build_location(station: dict) -> dict:
         "last_updated": last_updated,
     }
 
+# As duas máquinas pertencem a um único eletroposto público.
+# Mantemos o ID 260, já utilizado no feed enviado ao Google.
+JM_LOCATION_ID = "260"
+JM_STATION_IDS = {"260", "261"}
+
+async def build_public_locations(stations: list[dict]) -> list[dict]:
+    by_id = {str(dig(s, "id", "station_id", "cp_id", default="")): s for s in stations}
+    if not JM_STATION_IDS.issubset(by_id):
+        missing = sorted(JM_STATION_IDS - set(by_id))
+        raise RuntimeError(f"JM stations not available in TriCharge: {', '.join(missing)}")
+
+    primary = await build_location(by_id[JM_LOCATION_ID])
+    secondary = await build_location(by_id["261"])
+    # O identificador OCPI da localização e suas coordenadas permanecem estáveis.
+    primary["name"] = "JM Carregadores - Fersete"
+    primary["evses"] = primary["evses"] + secondary["evses"]
+    primary["last_updated"] = max(
+        e["last_updated"] for e in primary["evses"]
+    )
+    # Outras estações futuras, em endereços diferentes, permanecem separadas.
+    others = [await build_location(s) for sid, s in by_id.items() if sid not in JM_STATION_IDS]
+    return [primary] + others
+
 @app.get("/")
 async def root():
     return {"service": "JM Google OCPI Bridge", "status": "ok"}
@@ -243,31 +266,6 @@ async def health():
         "google_ocpi_token_loaded": bool(GOOGLE_OCPI_TOKEN),
         "google_ocpi_token_length": len(GOOGLE_OCPI_TOKEN)
     }
-@app.get("/auth-test")
-async def auth_test(authorization: Optional[str] = Security(authorization_header)):
-    if not authorization:
-        return {
-            "authorization_received": False
-        }
-
-    if authorization.startswith("Token "):
-        supplied = authorization[6:].strip()
-        scheme = "Token"
-    elif authorization.startswith("Bearer "):
-        supplied = authorization[7:].strip()
-        scheme = "Bearer"
-    else:
-        supplied = authorization.strip()
-        scheme = "Other"
-
-    return {
-        "authorization_received": True,
-        "scheme": scheme,
-        "supplied_length": len(supplied),
-        "expected_length": len(GOOGLE_OCPI_TOKEN),
-        "matches": supplied == GOOGLE_OCPI_TOKEN
-    }
-
 @app.get("/ocpi/versions")
 async def versions(response: Response, authorization: Optional[str] = Security(authorization_header), x_request_id: Optional[str] = Header(None, alias="X-Request-ID"), x_correlation_id: Optional[str] = Header(None, alias="X-Correlation-ID")):
     authorize(authorization)
@@ -287,7 +285,7 @@ async def locations(response: Response, authorization: Optional[str] = Security(
     authorize(authorization)
     try:
         body = await tri_get("/stations", params={"include": "connectors"})
-        locations = [await build_location(s) for s in station_list(body)]
+        locations = await build_public_locations(station_list(body))
         if date_from:
             df = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
             locations = [loc for loc in locations if datetime.fromisoformat(loc["last_updated"].replace("Z", "+00:00")) >= df]
@@ -304,6 +302,11 @@ async def locations(response: Response, authorization: Optional[str] = Security(
         raise HTTPException(502, detail=f"Bridge error: {e}")
 
 async def get_ocpi_location(location_id: str) -> dict:
+    if location_id == "261":
+        raise HTTPException(404, detail="Station 261 belongs to OCPI location 260")
+    if location_id == JM_LOCATION_ID:
+        body = await tri_get("/stations", params={"include": "connectors"})
+        return (await build_public_locations(station_list(body)))[0]
     body = await tri_get(f"/stations/{location_id}", params={"include": "connectors"})
     stations = station_list(body)
     station = stations[0] if stations else body.get("station", body) if isinstance(body, dict) else None
